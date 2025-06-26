@@ -12,6 +12,8 @@ public class AppDbContext : DbContext
     public DbSet<Session> Sessions { get; set; }
     public DbSet<CasinoChallenge> CasinoChallenges { get; set; }
     public DbSet<CasinoGame> CasinoGames { get; set; }
+    public DbSet<UserStats> UserStats { get; set; }
+    public DbSet<DailyChallenge> DailyChallenges { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +77,26 @@ public class AppDbContext : DbContext
                   .HasForeignKey(e => e.ChallengeId);
             entity.Property(e => e.PlayedAt).HasColumnType("timestamp with time zone");
         });
+
+        modelBuilder.Entity<UserStats>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.User)
+                  .WithMany()
+                  .HasForeignKey(e => e.UserId);
+            entity.HasIndex(e => e.UserId).IsUnique();
+            entity.Property(e => e.LastPlayedAt).HasColumnType("timestamp with time zone");
+        });
+
+        modelBuilder.Entity<DailyChallenge>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Challenge)
+                  .WithMany()
+                  .HasForeignKey(e => e.ChallengeId);
+            entity.HasIndex(e => e.Date);
+            entity.Property(e => e.Date).HasColumnType("date");
+        });
     }
 
     public override int SaveChanges()
@@ -115,6 +137,10 @@ public class AppDbContext : DbContext
             if (entry.Entity is CasinoGame game && entry.State == EntityState.Added)
             {
                 game.PlayedAt = DateTime.UtcNow;
+            }
+            if (entry.Entity is UserStats stats && entry.State == EntityState.Added)
+            {
+                stats.LastPlayedAt = DateTime.UtcNow;
             }
         }
     }

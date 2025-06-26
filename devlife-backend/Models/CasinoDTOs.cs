@@ -1,7 +1,4 @@
-﻿using DevLife.API.Models;
-
-
-namespace DevLife.API.Models.DTOs
+﻿namespace DevLife.API.Models.DTOs
 {
     public record PlayCasinoRequest(
     int ChallengeId,
