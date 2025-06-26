@@ -1,0 +1,32 @@
+# devlife-backend/.dockerignore
+
+# Build outputs
+bin/
+obj/
+out/
+publish/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Runtime files
+*.log
+*.tmp
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Node modules (if any)
+node_modules/
+
+# Comment out .env to allow copying it
+# .env
+# .env.*

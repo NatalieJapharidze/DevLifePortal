@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: devlife-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "6100:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devlife-network
+
+  mongodb:
+    image: mongo:7-jammy
+    container_name: devlife-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - devlife-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: devlife-redis
+    ports:
+      - "6200:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - devlife-network
+
+  api:
+    build:
+      context: ./devlife-backend
+      dockerfile: Dockerfile
+    container_name: devlife-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - ConnectionStrings__PostgreSQL=Server=postgres;Database=${POSTGRES_DB};User Id=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};
+      - ConnectionStrings__MongoDB=mongodb://mongodb:27017/${POSTGRES_DB}
+      - ConnectionStrings__Redis=redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./.env:/app/.env:ro
+    ports:
+      - "5000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - devlife-network
+
+networks:
+  devlife-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
