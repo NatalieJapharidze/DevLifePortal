@@ -11,6 +11,8 @@ namespace DevLife.API.Extensions
     {
         public static IServiceCollection ConfigureApiDocumentation(this IServiceCollection services)
         {
+            services.AddEndpointsApiExplorer();
+
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo
@@ -84,5 +86,4 @@ namespace DevLife.API.Extensions
             return services;
         }
     }
-
 }
