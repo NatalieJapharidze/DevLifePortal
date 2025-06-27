@@ -1,7 +1,6 @@
 ﻿using DevLife.API.Data;
 using DevLife.API.Endpoints;
 using DevLife.API.Services;
-using Scalar.AspNetCore;
 
 namespace DevLife.API.Extensions
 {
