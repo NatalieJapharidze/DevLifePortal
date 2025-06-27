@@ -1,5 +1,4 @@
-﻿// Services/CasinoService.cs
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using DevLife.API.Data;
 using DevLife.API.Models;
 
@@ -10,49 +9,151 @@ namespace DevLife.API.Services
         private readonly AppDbContext _context;
         private readonly MongoDbService _mongoService;
         private readonly RedisService _redisService;
+        private readonly GeminiService _geminiService;
 
-        public CasinoService(AppDbContext context, MongoDbService mongoService, RedisService redisService)
+        public CasinoService(AppDbContext context, MongoDbService mongoService, RedisService redisService, GeminiService geminiService)
         {
             _context = context;
             _mongoService = mongoService;
             _redisService = redisService;
+            _geminiService = geminiService;
         }
 
         #region Challenge Management
 
         public async Task<CasinoChallenge?> GetRandomChallengeAsync(string techStack, ExperienceLevel experienceLevel)
         {
-            var mongoSnippet = await _mongoService.GetRandomCodeSnippetAsync(techStack, experienceLevel.ToString());
-            if (mongoSnippet != null)
+
+            var aiChallenge = await GetAIChallenge(techStack, experienceLevel);
+            if (aiChallenge != null)
             {
-                return new CasinoChallenge
+                Console.WriteLine("✅ Using AI generated challenge");
+                return aiChallenge;
+            }
+
+            var mongoChallenge = await GetMongoChallenge(techStack, experienceLevel);
+            if (mongoChallenge != null)
+            {
+                Console.WriteLine("✅ Using MongoDB challenge (AI failed)");
+                return mongoChallenge;
+            }
+
+            var postgresChallenge = await GetPostgresChallenge(techStack, experienceLevel);
+            if (postgresChallenge != null)
+            {
+                Console.WriteLine("✅ Using PostgreSQL challenge (AI and MongoDB failed)");
+                return postgresChallenge;
+            }
+
+            Console.WriteLine("❌ All challenge sources failed");
+            return null;
+        }
+
+        private async Task<CasinoChallenge?> GetMongoChallenge(string techStack, ExperienceLevel experienceLevel)
+        {
+            try
+            {
+                Console.WriteLine($"📚 Searching MongoDB for {techStack} {experienceLevel} challenge");
+                var mongoSnippet = await _mongoService.GetRandomCodeSnippetAsync(techStack, experienceLevel.ToString());
+
+                if (mongoSnippet != null)
                 {
-                    Id = 0,
-                    TechStack = mongoSnippet.TechStack,
-                    Title = mongoSnippet.Title,
-                    Description = mongoSnippet.Description,
-                    CodeSnippet1 = mongoSnippet.Code1,
-                    CodeSnippet2 = mongoSnippet.Code2,
-                    CorrectAnswer = mongoSnippet.CorrectAnswer,
-                    Explanation = mongoSnippet.Explanation,
-                    Difficulty = Enum.Parse<ExperienceLevel>(mongoSnippet.Difficulty),
-                    CreatedAt = DateTime.UtcNow
-                };
+                    Console.WriteLine($"✅ MongoDB challenge found: {mongoSnippet.Title}");
+                    return new CasinoChallenge
+                    {
+                        Id = -1,
+                        TechStack = mongoSnippet.TechStack,
+                        Title = mongoSnippet.Title,
+                        Description = mongoSnippet.Description,
+                        CodeSnippet1 = mongoSnippet.Code1,
+                        CodeSnippet2 = mongoSnippet.Code2,
+                        CorrectAnswer = mongoSnippet.CorrectAnswer,
+                        Explanation = mongoSnippet.Explanation,
+                        Difficulty = Enum.Parse<ExperienceLevel>(mongoSnippet.Difficulty),
+                        CreatedAt = DateTime.UtcNow
+                    };
+                }
+                else
+                {
+                    Console.WriteLine($"❌ No MongoDB challenge found for {techStack} {experienceLevel}");
+                }
             }
-
-            var challenges = await _context.CasinoChallenges
-                .Where(c => c.TechStack == techStack && c.Difficulty == experienceLevel)
-                .ToListAsync();
-
-            if (!challenges.Any())
+            catch (Exception ex)
             {
-                challenges = await _context.CasinoChallenges.ToListAsync();
+                Console.WriteLine($"❌ MongoDB challenge error: {ex.Message}");
             }
+            return null;
+        }
 
-            if (!challenges.Any()) return null;
+        private async Task<CasinoChallenge?> GetPostgresChallenge(string techStack, ExperienceLevel experienceLevel)
+        {
+            try
+            {
+                Console.WriteLine($"🗄️ Searching PostgreSQL for {techStack} {experienceLevel} challenge");
 
-            var random = new Random();
-            return challenges[random.Next(challenges.Count)];
+                var challenges = await _context.CasinoChallenges
+                    .Where(c => c.TechStack == techStack && c.Difficulty == experienceLevel)
+                    .ToListAsync();
+
+                if (!challenges.Any())
+                {
+                    Console.WriteLine($"⚠️ No exact match, getting any PostgreSQL challenge");
+                    challenges = await _context.CasinoChallenges.ToListAsync();
+                }
+
+                if (challenges.Any())
+                {
+                    var random = new Random();
+                    var selected = challenges[random.Next(challenges.Count)];
+                    Console.WriteLine($"✅ PostgreSQL challenge found: {selected.Title}");
+                    return selected;
+                }
+                else
+                {
+                    Console.WriteLine("❌ No PostgreSQL challenges available");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ PostgreSQL challenge error: {ex.Message}");
+            }
+            return null;
+        }
+
+        private async Task<CasinoChallenge?> GetAIChallenge(string techStack, ExperienceLevel experienceLevel)
+        {
+            try
+            {
+                var cacheKey = $"ai_challenge_limit:{DateTime.UtcNow:yyyy-MM-dd-HH}";
+                var currentCount = await _redisService.GetGameStatsAsync(cacheKey);
+
+                if (currentCount >= 100)
+                {
+                    Console.WriteLine($"⚠️ AI challenge rate limit reached: {currentCount}/100 this hour");
+                    return null;
+                }
+
+                Console.WriteLine($"🤖 Generating AI challenge for {techStack} {experienceLevel} ({currentCount}/100 this hour)");
+                var aiChallenge = await _geminiService.GenerateCodeChallengeAsync(techStack, experienceLevel);
+
+                if (aiChallenge != null)
+                {
+                    await _redisService.IncrementGameStatsAsync(cacheKey);
+
+                    aiChallenge.Id = 0;
+                    Console.WriteLine($"✅ AI challenge generated: {aiChallenge.Title}");
+                    return aiChallenge;
+                }
+                else
+                {
+                    Console.WriteLine("❌ AI failed to generate challenge");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ AI challenge error: {ex.Message}");
+            }
+            return null;
         }
 
         public async Task<CasinoChallenge?> GetDailyChallengeAsync()
@@ -65,27 +166,54 @@ namespace DevLife.API.Services
 
             if (existingDaily?.Challenge != null)
             {
+                Console.WriteLine("✅ Using existing daily challenge");
                 return existingDaily.Challenge;
             }
 
-            var allChallenges = await _context.CasinoChallenges.ToListAsync();
-            if (!allChallenges.Any()) return null;
+            CasinoChallenge? selectedChallenge = null;
 
-            var random = new Random();
-            var selectedChallenge = allChallenges[random.Next(allChallenges.Count)];
-
-            var dailyChallenge = new DailyChallenge
+            selectedChallenge = await GetAIChallenge("JavaScript", ExperienceLevel.Middle);
+            if (selectedChallenge != null)
             {
-                Date = today,
-                ChallengeId = selectedChallenge.Id,
-                BonusMultiplier = 3,
-                IsActive = true
-            };
+                Console.WriteLine("✅ Daily challenge: AI Generated");
+            }
+            else
+            {
+                selectedChallenge = await GetMongoChallenge("JavaScript", ExperienceLevel.Middle);
+                if (selectedChallenge != null)
+                {
+                    Console.WriteLine("✅ Daily challenge: MongoDB (AI failed)");
+                }
+                else
+                {
+                    var allChallenges = await _context.CasinoChallenges.ToListAsync();
+                    if (allChallenges.Any())
+                    {
+                        var random = new Random();
+                        selectedChallenge = allChallenges[random.Next(allChallenges.Count)];
+                        Console.WriteLine("✅ Daily challenge: PostgreSQL (AI and MongoDB failed)");
+                    }
+                }
+            }
 
-            _context.DailyChallenges.Add(dailyChallenge);
-            await _context.SaveChangesAsync();
+            if (selectedChallenge != null)
+            {
+                var dailyChallenge = new DailyChallenge
+                {
+                    Date = today,
+                    ChallengeId = selectedChallenge.Id,
+                    BonusMultiplier = 3,
+                    IsActive = true
+                };
 
-            return selectedChallenge;
+                _context.DailyChallenges.Add(dailyChallenge);
+                await _context.SaveChangesAsync();
+
+                return selectedChallenge;
+            }
+
+            Console.WriteLine("❌ All sources failed for daily challenge");
+            return null;
         }
 
         #endregion
@@ -94,12 +222,47 @@ namespace DevLife.API.Services
 
         public async Task<CasinoGame> PlayGameAsync(int userId, int challengeId, int userAnswer, int betPoints)
         {
-            var challenge = await _context.CasinoChallenges.FindAsync(challengeId);
-            if (challenge == null)
+            CasinoChallenge? challenge = null;
+
+            if (challengeId == 0)
             {
-                throw new ArgumentException("Challenge not found");
+                throw new ArgumentException("AI challenges should use PlayAIChallengeAsync method");
+            }
+            else if (challengeId == -1)
+            {
+                throw new ArgumentException("MongoDB challenges should be passed with challenge data");
+            }
+            else
+            {
+                challenge = await _context.CasinoChallenges.FindAsync(challengeId);
+                if (challenge == null)
+                {
+                    throw new ArgumentException("Challenge not found");
+                }
             }
 
+            return await ProcessGamePlay(userId, challenge, userAnswer, betPoints, "Casino");
+        }
+
+        public async Task<CasinoGame> PlayChallengeAsync(int userId, CasinoChallenge challenge, int userAnswer, int betPoints)
+        {
+            string gameType = challenge.Id switch
+            {
+                0 => "AI_Challenge",
+                -1 => "MongoDB_Challenge",
+                _ => "Casino"
+            };
+
+            return await ProcessGamePlay(userId, challenge, userAnswer, betPoints, gameType);
+        }
+
+        public async Task<CasinoGame> PlayAIChallengeAsync(int userId, CasinoChallenge aiChallenge, int userAnswer, int betPoints)
+        {
+            return await ProcessGamePlay(userId, aiChallenge, userAnswer, betPoints, "AI_Challenge");
+        }
+
+        private async Task<CasinoGame> ProcessGamePlay(int userId, CasinoChallenge challenge, int userAnswer, int betPoints, string gameType)
+        {
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
             {
@@ -118,9 +281,14 @@ namespace DevLife.API.Services
             var basePoints = isCorrect ? betPoints * 2 : -betPoints;
             var finalPoints = (int)(basePoints * zodiacMultiplier);
 
+            if (gameType == "AI_Challenge" && isCorrect)
+            {
+                finalPoints = (int)(finalPoints * 1.1);
+            }
+
             var today = DateTime.UtcNow.Date;
             var isDailyChallenge = await _context.DailyChallenges
-                .AnyAsync(d => d.Date == today && d.ChallengeId == challengeId && d.IsActive);
+                .AnyAsync(d => d.Date == today && d.ChallengeId == challenge.Id && d.IsActive);
 
             if (isDailyChallenge && isCorrect)
             {
@@ -137,7 +305,7 @@ namespace DevLife.API.Services
             var game = new CasinoGame
             {
                 UserId = userId,
-                ChallengeId = challengeId,
+                ChallengeId = challenge.Id,
                 UserAnswer = userAnswer,
                 BetPoints = betPoints,
                 IsCorrect = isCorrect,
@@ -150,7 +318,7 @@ namespace DevLife.API.Services
             var score = new Score
             {
                 UserId = userId,
-                GameType = isDailyChallenge ? "DailyChallenge" : "Casino",
+                GameType = gameType,
                 Points = finalPoints,
                 CreatedAt = DateTime.UtcNow
             };
@@ -167,58 +335,6 @@ namespace DevLife.API.Services
             {
                 await _redisService.IncrementGameStatsAsync("games_won");
             }
-
-            await _context.SaveChangesAsync();
-            return game;
-        }
-
-        public async Task<CasinoGame> PlayAIChallengeAsync(int userId, CasinoChallenge aiChallenge, int userAnswer, int betPoints)
-        {
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null)
-            {
-                throw new ArgumentException("User not found");
-            }
-
-            var currentPoints = await GetUserPointsAsync(userId);
-            if (currentPoints < betPoints)
-            {
-                throw new InvalidOperationException("არ გაქვს საკმარისი points! 💰");
-            }
-
-            var isCorrect = userAnswer == aiChallenge.CorrectAnswer;
-
-            var zodiacMultiplier = GetZodiacLuckMultiplier(user.ZodiacSign);
-            var basePoints = isCorrect ? betPoints * 2 : -betPoints;
-            var finalPoints = (int)(basePoints * zodiacMultiplier * 1.1);
-
-            var game = new CasinoGame
-            {
-                UserId = userId,
-                ChallengeId = 0,
-                UserAnswer = userAnswer,
-                BetPoints = betPoints,
-                IsCorrect = isCorrect,
-                PointsWon = finalPoints,
-                PlayedAt = DateTime.UtcNow
-            };
-
-            _context.CasinoGames.Add(game);
-
-            var score = new Score
-            {
-                UserId = userId,
-                GameType = "AI_Challenge",
-                Points = finalPoints,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.Scores.Add(score);
-
-            await UpdateUserStatsAsync(userId, isCorrect, finalPoints);
-
-            var newPoints = await GetUserPointsAsync(userId);
-            await _redisService.CacheUserPointsAsync(userId, newPoints);
 
             await _context.SaveChangesAsync();
             return game;
@@ -259,7 +375,10 @@ namespace DevLife.API.Services
                 {
                     UserId = g.Key,
                     TotalPoints = g.Sum(s => s.Points),
-                    GamesPlayed = g.Count()
+                    GamesPlayed = g.Count(),
+                    AIGames = g.Count(s => s.GameType == "AI_Challenge"),
+                    MongoGames = g.Count(s => s.GameType == "MongoDB_Challenge"),
+                    RegularGames = g.Count(s => s.GameType == "Casino")
                 })
                 .OrderByDescending(x => x.TotalPoints)
                 .Take(limit)
@@ -278,6 +397,9 @@ namespace DevLife.API.Services
                     zodiacSign = user?.ZodiacSign.ToString() ?? "Unknown",
                     totalPoints = item.TotalPoints,
                     gamesPlayed = item.GamesPlayed,
+                    aiGames = item.AIGames,
+                    mongoGames = item.MongoGames,
+                    regularGames = item.RegularGames,
                     currentStreak = stats.CurrentStreak,
                     bestStreak = stats.BestStreak,
                     winRate = stats.TotalGamesPlayed > 0 ?
@@ -385,22 +507,7 @@ const increment = () => {
                     Explanation = "React state updates are asynchronous. ყოველთვის function form გამოიყენე multiple updates-ისთვის",
                     Difficulty = ExperienceLevel.Junior
                 },
-                new()
-                {
-                    TechStack = "React",
-                    Title = "useEffect Dependency Array",
-                    Description = "რომელი useEffect გამოიწვევს infinite loop-ს?",
-                    CodeSnippet1 = @"useEffect(() => {
-    fetchData();
-}, [data]);",
-                    CodeSnippet2 = @"useEffect(() => {
-    fetchData();
-}, []);",
-                    CorrectAnswer = 1,
-                    Explanation = "თუ data იცვლება useEffect-ში, ეს infinite loop გამოიწვევს",
-                    Difficulty = ExperienceLevel.Middle
-                },
-
+                
                 new()
                 {
                     TechStack = ".NET",
@@ -415,23 +522,6 @@ const increment = () => {
                     CorrectAnswer = 1,
                     Explanation = "ყოველთვის Where-ის შემდეგ Select გამოიყენე performance-ისთვის",
                     Difficulty = ExperienceLevel.Middle
-                },
-                new()
-                {
-                    TechStack = ".NET",
-                    Title = "Async/Await Pattern",
-                    Description = "რომელი async pattern სწორია?",
-                    CodeSnippet1 = @"public async Task<string> GetDataAsync()
-{
-    return await httpClient.GetStringAsync(url);
-}",
-                    CodeSnippet2 = @"public async Task<string> GetDataAsync()
-{
-    return httpClient.GetStringAsync(url).Result;
-}",
-                    CorrectAnswer = 1,
-                    Explanation = ".Result deadlock-ს იწვევს. ყოველთვის await გამოიყენე",
-                    Difficulty = ExperienceLevel.Senior
                 },
 
                 new()
@@ -448,40 +538,13 @@ const increment = () => {
                     CorrectAnswer = 2,
                     Explanation = "map first doubles all numbers, then filter keeps even ones: [2,4,6,8,10] → [2,4,6,8,10]",
                     Difficulty = ExperienceLevel.Junior
-                },
-
-                new()
-                {
-                    TechStack = "Python",
-                    Title = "List Comprehension vs Loop",
-                    Description = "რომელი კოდი უფრო ეფექტურია?",
-                    CodeSnippet1 = @"result = []
-for i in range(10):
-    if i % 2 == 0:
-        result.append(i * 2)",
-                    CodeSnippet2 = @"result = [i * 2 for i in range(10) if i % 2 == 0]",
-                    CorrectAnswer = 2,
-                    Explanation = "List comprehension Python-ში უფრო სწრაფი და რეადაბლია",
-                    Difficulty = ExperienceLevel.Junior
-                },
-
-                new()
-                {
-                    TechStack = "Vue",
-                    Title = "Vue Reactivity",
-                    Description = "რომელი კოდი სწორად განაახლებს UI-ს?",
-                    CodeSnippet1 = @"this.items.push(newItem);",
-                    CodeSnippet2 = @"this.items[this.items.length] = newItem;",
-                    CorrectAnswer = 1,
-                    Explanation = "Vue-ში array mutations reactive არის, direct assignment კი არა",
-                    Difficulty = ExperienceLevel.Middle
                 }
             };
 
             _context.CasinoChallenges.AddRange(challenges);
             await _context.SaveChangesAsync();
 
-            Console.WriteLine($"✅ Seeded {challenges.Count} casino challenges");
+            Console.WriteLine($"Seeded {challenges.Count} casino challenges");
         }
 
         #endregion
