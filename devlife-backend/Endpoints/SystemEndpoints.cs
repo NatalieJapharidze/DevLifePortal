@@ -8,8 +8,7 @@ namespace DevLife.API.Endpoints
         public static void MapSystemEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/api")
-                .WithTags("System")
-                .WithOpenApi();
+                .WithTags("System");
 
             group.MapGet("/health", GetHealthAsync)
                 .WithName("GetHealth")

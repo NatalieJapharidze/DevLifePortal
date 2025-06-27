@@ -7,8 +7,7 @@ namespace DevLife.API.Endpoints
         public static void MapDatingEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/api/dating")
-                .WithTags("Dating")
-                .WithOpenApi();
+                .WithTags("Dating");
 
             group.MapGet("/profiles", GetProfilesAsync)
                 .WithName("GetProfiles")

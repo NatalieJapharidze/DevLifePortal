@@ -7,8 +7,7 @@ namespace DevLife.API.Endpoints
         public static void MapDashboardEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/api")
-                .WithTags("Dashboard")
-                .WithOpenApi();
+                .WithTags("Dashboard");
 
             group.MapGet("/dashboard", GetDashboardAsync)
                 .WithName("GetDashboard")

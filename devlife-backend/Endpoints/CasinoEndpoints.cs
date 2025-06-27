@@ -9,8 +9,7 @@ namespace DevLife.API.Endpoints
         public static void MapCasinoEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/api/casino")
-                .WithTags("Casino")
-                .WithOpenApi();
+                .WithTags("Casino");
 
             group.MapGet("/challenge", GetChallengeAsync)
                 .WithName("GetChallenge")
